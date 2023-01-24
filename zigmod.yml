@@ -1,0 +1,6 @@
+id: i41k4k1ifw134o6cc6t65yawzfni6wn4qrusxf01yttwoeqy
+name: gir-ffi
+license: MIT
+description: Generate FFI bindings for Zig using GObject Introspection
+root_dependencies:
+  - src: git https://github.com/paveloom-z/zig-girepository

@@ -1,0 +1,15 @@
+# Zig
+zig-cache
+zig-out
+
+# Zigmod
+.zigmod
+.zigmod.lock
+deps.zig
+
+# Valgrind
+leak.txt
+vgcore*
+
+# GObject Introspection
+out
