@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const deps = @import("deps.zig");
-
 pub fn build(b: *std.build.Builder) void {
     // Add standard target options
     const target = b.standardTargetOptions(.{});
@@ -23,10 +21,18 @@ pub fn build(b: *std.build.Builder) void {
     }
     run_step.dependOn(&run_cmd.step);
     // Add the dependencies
-    exe.addPackage(deps.pkgs.girepository.pkg.?);
+    exe.addPackage(std.build.Pkg{
+        .name = "girepository",
+        .source = .{ .path = "src/c/libgirepository.zig" },
+        .dependencies = &.{},
+    });
+    exe.addPackage(std.build.Pkg{
+        .name = "xml",
+        .source = .{ .path = "src/c/libxml.zig" },
+        .dependencies = &.{},
+    });
     // Link the libraries
     exe.linkLibC();
     exe.linkSystemLibrary("gobject-introspection-1.0");
-    // Use the `stage1` compiler
-    exe.use_stage1 = true;
+    exe.linkSystemLibrary("libxml-2.0");
 }

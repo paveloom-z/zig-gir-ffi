@@ -3,4 +3,3 @@ name: gir-ffi
 license: MIT
 description: Generate FFI bindings for Zig using GObject Introspection
 root_dependencies:
-  - src: git https://github.com/paveloom-z/zig-girepository

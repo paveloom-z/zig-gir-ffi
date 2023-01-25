@@ -2,16 +2,11 @@ const std = @import("std");
 
 const gir = @import("girepository");
 
-const c = gir.c;
-
 const emit = @import("emit/mod.zig");
 const input = @import("input.zig");
 
 /// Namespace in question
 pub const target_namespace_name = "GIRepository";
-
-/// Process-global default GIRepository
-var repository: *c.GIRepository = undefined;
 
 /// Prepare output writers
 const stderr = std.io.getStdErr().writer();
@@ -67,7 +62,7 @@ pub fn main() !void {
     };
     defer output_dir.close();
     // Get the singleton process-global default GIRepository
-    repository = c.g_irepository_get_default();
+    var repository = gir.g_irepository_get_default();
     // Emit code from the target namespace
     emit.from(
         repository,
