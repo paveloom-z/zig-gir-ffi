@@ -13,7 +13,7 @@ pub fn sliceFrom(ptr: [*c]const u8) [:0]const u8 {
 /// Emit code from a target namespace
 pub fn from(
     repository: *gir.GIRepository,
-    target_namespace_name: [:0]const u8,
+    target_namespace_name: []const u8,
     output_dir: *std.fs.Dir,
     allocator: std.mem.Allocator,
 ) !void {
@@ -28,7 +28,10 @@ pub fn from(
         &g_err,
     );
     if (g_err) |_| {
-        std.log.err("Couldn't load the namespace.", .{});
+        std.log.err(
+            "Couldn't load the namespace `{s}`.",
+            .{target_namespace_name},
+        );
         std.os.exit(1);
     }
     // Get the loaded version
@@ -135,6 +138,7 @@ pub fn from(
             },
             gir.GI_INFO_TYPE_OBJECT => {
                 const object_file_path = object.from(
+                    target_namespace_name,
                     info,
                     info_name,
                     &object_subdir,

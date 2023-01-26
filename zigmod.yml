@@ -3,3 +3,4 @@ name: gir-ffi
 license: MIT
 description: Generate FFI bindings for Zig using GObject Introspection
 root_dependencies:
+  - src: git https://github.com/Hejsil/zig-clap tag-0.6.0

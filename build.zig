@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const deps = @import("deps.zig");
+
 pub fn build(b: *std.build.Builder) void {
     // Add standard target options
     const target = b.standardTargetOptions(.{});
@@ -21,6 +23,7 @@ pub fn build(b: *std.build.Builder) void {
     }
     run_step.dependOn(&run_cmd.step);
     // Add the dependencies
+    exe.addPackage(deps.pkgs.clap.pkg.?);
     exe.addPackage(std.build.Pkg{
         .name = "girepository",
         .source = .{ .path = "src/c/libgirepository.zig" },

@@ -82,6 +82,7 @@ fn getDocstring(
 
 /// Emit an object
 pub fn from(
+    target_namespace_name: []const u8,
     info: *gir.GIBaseInfo,
     info_name: [:0]const u8,
     subdir: *std.fs.Dir,
@@ -190,7 +191,7 @@ pub fn from(
                         if (std.mem.eql(
                             u8,
                             interface_namespace_name,
-                            main.target_namespace_name,
+                            target_namespace_name,
                         )) {
                             _ = try dependencies.getOrPut(interface_name);
                             break :in interface_name;

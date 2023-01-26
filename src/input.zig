@@ -22,20 +22,10 @@ fn askOverwriteDir() !void {
     }
 }
 
-/// Get the output directory from the arguments
-pub fn getOutputDir(allocator: std.mem.Allocator) !std.fs.Dir {
-    // Prepare an arguments iterator
-    var args = try std.process.argsWithAllocator(allocator);
-    // Skip the first argument (which is a path to the binary)
-    _ = args.skip();
-    // Try to get the second argument
-    const output_dir_path = args.next() orelse {
-        std.log.err("Please provide a path to the output directory.", .{});
-        return error.Error;
-    };
-    // Create the directory if it doesn't exist,
-    // then return a handle. Works for absolute
-    // paths, too
+// Create the directory if it doesn't exist, then return a handle.
+//
+// Works for absolute paths, too.
+pub fn getOutputDir(output_dir_path: []const u8) !std.fs.Dir {
     const cwd = std.fs.cwd();
     cwd.makeDir(output_dir_path) catch |fs_err| {
         switch (fs_err) {
