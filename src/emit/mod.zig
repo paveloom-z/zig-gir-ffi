@@ -5,11 +5,6 @@ const xml = @import("xml");
 
 const object = @import("object.zig");
 
-/// Create a slice from a pointer to a null-terminated array
-pub fn sliceFrom(ptr: [*c]const u8) [:0]const u8 {
-    return std.mem.span(@ptrCast([*:0]const u8, ptr));
-}
-
 /// Emit code from a target namespace
 pub fn from(
     repository: *gir.GIRepository,
@@ -35,10 +30,10 @@ pub fn from(
         std.os.exit(1);
     }
     // Get the loaded version
-    const target_namespace_version = sliceFrom(gir.g_irepository_get_version(
+    const target_namespace_version = std.mem.sliceTo(gir.g_irepository_get_version(
         repository,
         target_namespace_name.ptr,
-    ));
+    ), 0);
     // Get the path to the `.gir` file
     const gir_file_path = try std.mem.concatWithSentinel(
         allocator,
@@ -91,7 +86,7 @@ pub fn from(
         );
         defer gir.g_base_info_unref(info);
         // Depending on the type of the entry, emit the code
-        const info_name = sliceFrom(gir.g_base_info_get_name(info));
+        const info_name = std.mem.sliceTo(gir.g_base_info_get_name(info), 0);
         const info_type = gir.g_base_info_get_type(info);
         switch (info_type) {
             gir.GI_INFO_TYPE_INVALID => {

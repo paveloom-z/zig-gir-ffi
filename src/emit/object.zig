@@ -64,7 +64,7 @@ fn getDocstring(
     );
     defer xml.xmlFree.?(docstring);
     // Format the string
-    const docstring_slice = emit.sliceFrom(docstring);
+    const docstring_slice = std.mem.sliceTo(docstring, 0);
     const docstring_formatted = try std.mem.replaceOwned(
         xml.xmlChar,
         allocator,
@@ -181,11 +181,13 @@ pub fn from(
                 gir.GI_TYPE_TAG_INTERFACE => out: {
                     const interface = gir.g_type_info_get_interface(field_type);
                     defer gir.g_base_info_unref(interface);
-                    const interface_name = emit.sliceFrom(
+                    const interface_name = std.mem.sliceTo(
                         gir.g_base_info_get_name(interface),
+                        0,
                     );
-                    const interface_namespace_name = emit.sliceFrom(
+                    const interface_namespace_name = std.mem.sliceTo(
                         gir.g_base_info_get_namespace(interface),
+                        0,
                     );
                     const interface_string = in: {
                         if (std.mem.eql(
