@@ -106,21 +106,9 @@ pub fn from(
                     .{info_name},
                 );
             },
-            gir.GI_INFO_TYPE_CALLBACK => {
-                std.log.info(
-                    "Callback `{s}`",
-                    .{info_name},
-                );
-            },
             gir.GI_INFO_TYPE_STRUCT => {
                 std.log.info(
                     "Struct `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_BOXED => {
-                std.log.info(
-                    "Boxed `{s}`",
                     .{info_name},
                 );
             },
@@ -153,12 +141,6 @@ pub fn from(
                 };
                 try objects_file_paths.append(object_file_path);
             },
-            gir.GI_INFO_TYPE_INTERFACE => {
-                std.log.info(
-                    "Interface `{s}`",
-                    .{info_name},
-                );
-            },
             gir.GI_INFO_TYPE_CONSTANT => {
                 std.log.info(
                     "Constant `{s}`",
@@ -168,48 +150,6 @@ pub fn from(
             gir.GI_INFO_TYPE_UNION => {
                 std.log.info(
                     "Union `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_VALUE => {
-                std.log.info(
-                    "Value `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_SIGNAL => {
-                std.log.info(
-                    "Signal `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_VFUNC => {
-                std.log.info(
-                    "VFunc `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_PROPERTY => {
-                std.log.info(
-                    "Property `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_FIELD => {
-                std.log.info(
-                    "Field `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_ARG => {
-                std.log.info(
-                    "Argument `{s}`",
-                    .{info_name},
-                );
-            },
-            gir.GI_INFO_TYPE_TYPE => {
-                std.log.info(
-                    "Type `{s}`",
                     .{info_name},
                 );
             },
