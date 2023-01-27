@@ -3,7 +3,8 @@ const std = @import("std");
 const gir = @import("girepository");
 const xml = @import("xml");
 
-const object = @import("object.zig");
+pub const field = @import("field.zig");
+pub const object = @import("object.zig");
 
 /// Emit code from a target namespace
 pub fn from(
