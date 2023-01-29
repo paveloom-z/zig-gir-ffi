@@ -3,8 +3,66 @@ const std = @import("std");
 const gir = @import("girepository");
 const xml = @import("xml");
 
+pub const arg = @import("arg.zig");
+pub const @"type" = @import("type.zig");
+pub const callable = @import("callable.zig");
 pub const field = @import("field.zig");
 pub const object = @import("object.zig");
+pub const utils = @import("utils.zig");
+
+/// The indentation padding
+pub const pad = " " ** 4;
+
+pub fn getDocstring(
+    symbol: [:0]const u8,
+    expressions: []const []const u8,
+    gir_context: xml.xmlXPathContextPtr,
+    indent: bool,
+    allocator: std.mem.Allocator,
+) !?[:0]const u8 {
+    // Evaluate each XPath expression,
+    // return the first one that matched
+    for (expressions) |expression| {
+        const result = xml.xmlXPathEval(
+            expression.ptr,
+            gir_context,
+        );
+        if (result == null) {
+            std.log.warn(
+                "Couldn't evaluate the XPath expression for `{s}`.",
+                .{symbol},
+            );
+            continue;
+        }
+        defer xml.xmlXPathFreeObject(result);
+        // Check whether we got a match
+        const nodeset = result.*.nodesetval;
+        if (nodeset == null or nodeset.*.nodeNr == 0) {
+            continue;
+        }
+        // Get the string from the first match
+        const docstring = xml.xmlXPathCastNodeToString(
+            nodeset.*.nodeTab[0],
+        );
+        defer xml.xmlFree.?(docstring);
+        // Format the string
+        const docstring_slice = std.mem.sliceTo(docstring, 0);
+        const docstring_formatted = try std.mem.replaceOwned(
+            xml.xmlChar,
+            allocator,
+            docstring_slice,
+            "\n",
+            if (indent) "\n" ++ pad ++ "/// " else "\n/// ",
+        );
+        return try std.mem.concatWithSentinel(
+            allocator,
+            u8,
+            &.{ "/// ", docstring_formatted },
+            0,
+        );
+    }
+    return null;
+}
 
 /// Emit code from a target namespace
 pub fn from(
@@ -60,10 +118,21 @@ pub fn from(
     defer xml.xmlFreeDoc(gir_doc);
     const gir_context = xml.xmlXPathNewContext(gir_doc);
     defer xml.xmlXPathFreeContext(gir_context);
-    {
-        const ret = xml.xmlXPathRegisterNs(gir_context, "gir", "http://www.gtk.org/introspection/core/1.0");
+    inline for (.{
+        .{ .name = "core", .uri = "http://www.gtk.org/introspection/core/1.0" },
+        .{ .name = "c", .uri = "http://www.gtk.org/introspection/c/1.0" },
+        .{ .name = "glib", .uri = "http://www.gtk.org/introspection/glib/1.0" },
+    }) |xml_namespace| {
+        const ret = xml.xmlXPathRegisterNs(
+            gir_context,
+            xml_namespace.name,
+            xml_namespace.uri,
+        );
         if (ret != 0) {
-            std.log.err("Failed to register the namespace.", .{});
+            std.log.err(
+                "Failed to register the \"{s}\" namespace.",
+                .{xml_namespace.name},
+            );
             return error.Error;
         }
     }
@@ -130,7 +199,7 @@ pub fn from(
                     allocator,
                 ) catch {
                     std.log.warn(
-                        "Couldn't emit object `{s}`",
+                        "Couldn't emit object `{s}`.",
                         .{info_name},
                     );
                     continue;

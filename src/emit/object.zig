@@ -20,66 +20,6 @@ pub fn getSubdir(output_dir: *std.fs.Dir) !std.fs.Dir {
     };
 }
 
-/// Get the documentation string for the object
-fn getDocstring(
-    info_name: [:0]const u8,
-    gir_context: xml.xmlXPathContextPtr,
-    allocator: std.mem.Allocator,
-) !?[:0]const u8 {
-    // Evaluate an XPath expression
-    const expression = try std.mem.concatWithSentinel(
-        allocator,
-        u8,
-        &.{
-            "//gir:class[@name=\"",
-            info_name,
-            "\"]/gir:doc",
-        },
-        0,
-    );
-    const result = xml.xmlXPathEval(
-        expression.ptr,
-        gir_context,
-    );
-    if (result == null) {
-        std.log.warn(
-            "Couldn't evaluate the XPath expression for `{s}`",
-            .{info_name},
-        );
-        return null;
-    }
-    defer xml.xmlXPathFreeObject(result);
-    // Check that whether we got a match
-    const nodeset = result.*.nodesetval;
-    if (nodeset.*.nodeNr == 0) {
-        std.log.warn(
-            "The nodeset wasn't populated for {s}.",
-            .{info_name},
-        );
-        return null;
-    }
-    // Get the string from the first match
-    const docstring = xml.xmlXPathCastNodeToString(
-        nodeset.*.nodeTab[0],
-    );
-    defer xml.xmlFree.?(docstring);
-    // Format the string
-    const docstring_slice = std.mem.sliceTo(docstring, 0);
-    const docstring_formatted = try std.mem.replaceOwned(
-        xml.xmlChar,
-        allocator,
-        docstring_slice,
-        "\n",
-        "\n/// ",
-    );
-    return try std.mem.concatWithSentinel(
-        allocator,
-        u8,
-        &.{ "/// ", docstring_formatted },
-        0,
-    );
-}
-
 /// Emit an object
 pub fn from(
     target_namespace_name: []const u8,
@@ -119,20 +59,35 @@ pub fn from(
     // Prepare a hashset for dependencies
     var dependencies = std.StringHashMap(void).init(allocator);
     // Get the documentation string
-    const maybe_docstring = try getDocstring(info_name, gir_context, allocator);
+    const expressions = &.{
+        try std.mem.concatWithSentinel(allocator, u8, &.{
+            "//core:class[@name=\"",
+            info_name,
+            "\"]/core:doc",
+        }, 0),
+    };
+    const maybe_docstring = try emit.getDocstring(
+        info_name,
+        expressions,
+        gir_context,
+        false,
+        allocator,
+    );
     if (maybe_docstring == null) {
         std.log.warn(
-            "Couldn't get the documentation string for `{s}`",
+            "Couldn't get the documentation string for `{s}`.",
             .{info_name},
         );
     }
-    // For each index of a constant
+    // Parse constants
+    const constants_n = gir.g_object_info_get_n_constants(object);
     {
-        const n = gir.g_object_info_get_n_constants(object);
-        var i: gir.gint = 0;
-        while (i < n) : (i += 1) {
-            // Get the constant
-            const constant = gir.g_object_info_get_constant(info, i);
+        var i: usize = 0;
+        while (i < constants_n) : (i += 1) {
+            const constant = gir.g_object_info_get_constant(
+                info,
+                @intCast(gir.gint, i),
+            );
             defer gir.g_base_info_unref(constant);
             std.log.warn("TODO: Object Constants", .{});
         }
@@ -153,8 +108,46 @@ pub fn from(
             defer gir.g_base_info_unref(field);
             fields[i] = try emit.field.from(
                 field,
+                info_name,
                 &dependencies,
                 target_namespace_name,
+                allocator,
+            );
+        }
+    }
+    // Parse interfaces
+    const interfaces_n = gir.g_object_info_get_n_interfaces(object);
+    {
+        var i: usize = 0;
+        while (i < interfaces_n) : (i += 1) {
+            const interface = gir.g_object_info_get_interface(
+                info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(interface);
+            std.log.warn("TODO: Object Interfaces", .{});
+        }
+    }
+    // Parse methods
+    const methods_n = gir.g_object_info_get_n_methods(object);
+    const methods = try allocator.alloc(
+        emit.callable.Callable,
+        @intCast(usize, methods_n),
+    );
+    {
+        var i: usize = 0;
+        while (i < methods_n) : (i += 1) {
+            const method = gir.g_object_info_get_method(
+                info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(method);
+            methods[i] = try emit.callable.from(
+                method,
+                &dependencies,
+                info_name,
+                target_namespace_name,
+                gir_context,
                 allocator,
             );
         }
@@ -177,16 +170,20 @@ pub fn from(
         try writer.print("\n{s}", .{docstring});
     }
     try writer.print(
-        "\npub const {s} = extern struct {{\n",
+        \\
+        \\pub const {s} = extern struct {{
+        \\    const Self = @This();
+        \\
+    ,
         .{info_name},
     );
     for (fields) |field| {
-        const pointer_string = if (field.type.is_pointer) "?*" else "";
-        try writer.print("    {s}: {s}{s},\n", .{
-            field.name,
-            pointer_string,
-            field.type.name,
-        });
+        const string = try field.toString(allocator);
+        try writer.print("{s}", .{string});
+    }
+    for (methods) |method| {
+        const string = try method.toString(allocator);
+        try writer.print("{s}", .{string});
     }
     try writer.print("}};\n", .{});
     return file_path;
