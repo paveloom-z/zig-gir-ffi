@@ -11,9 +11,13 @@ Repository:
 
 Make sure you have installed:
 
-- A development library for `gobject-introspection`
+- Development libraries for
+  - `gobject-introspection`
+  - `libxml2`
 - [Zig](https://ziglang.org) (`v0.10.1`)
 - [Zigmod](https://github.com/nektro/zigmod)
+
+Alternatively, you can use the [Nix flake](flake.nix) via `nix develop`.
 
 #### Build
 

@@ -13,6 +13,50 @@ pub const utils = @import("utils.zig");
 /// The indentation padding
 pub const pad = " " ** 4;
 
+/// Find a matching `.gir` file by traversing search paths
+fn getGirFilePath(
+    target_namespace_name: []const u8,
+    target_namespace_version: []const u8,
+    allocator: std.mem.Allocator,
+) ![:0]const u8 {
+    var search_paths = std.ArrayList([]const u8).init(allocator);
+    defer search_paths.deinit();
+
+    try search_paths.append("/usr/share");
+    var data_dirs_iterator = std.mem.split(
+        u8,
+        std.os.getenv("XDG_DATA_DIRS") orelse "",
+        ":",
+    );
+    while (data_dirs_iterator.next()) |data_dir| {
+        try search_paths.append(data_dir);
+    }
+
+    for (search_paths.items) |search_path| {
+        const gir_file_path = try std.mem.concatWithSentinel(
+            allocator,
+            u8,
+            &.{
+                search_path,
+                "/gir-1.0/",
+                target_namespace_name,
+                "-",
+                target_namespace_version,
+                ".gir",
+            },
+            0,
+        );
+        std.fs.cwd().access(gir_file_path, .{}) catch continue;
+        return gir_file_path;
+    }
+
+    std.log.err(
+        "Couldn't find a matching `.gir` file for the namespace {s}.",
+        .{target_namespace_name},
+    );
+    return error.Error;
+}
+
 pub fn getDocstring(
     symbol: [:0]const u8,
     expressions: []const []const u8,
@@ -94,17 +138,10 @@ pub fn from(
         target_namespace_name.ptr,
     ), 0);
     // Get the path to the `.gir` file
-    const gir_file_path = try std.mem.concatWithSentinel(
+    const gir_file_path = try getGirFilePath(
+        target_namespace_name,
+        target_namespace_version,
         allocator,
-        u8,
-        &.{
-            "/usr/share/gir-1.0/",
-            target_namespace_name,
-            "-",
-            target_namespace_version,
-            ".gir",
-        },
-        0,
     );
     // Prepare an XML reader (for documentation strings)
     const gir_doc = xml.xmlParseFile(gir_file_path.ptr);
