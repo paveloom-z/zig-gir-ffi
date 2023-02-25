@@ -3,7 +3,8 @@ const std = @import("std");
 const gir = @import("girepository");
 const xml = @import("xml");
 
-const emit = @import("mod.zig");
+const mod = @import("mod.zig");
+const PAD = mod.PAD;
 
 /// An interface to a `.gir` file
 pub const GirFile = struct {
@@ -136,7 +137,7 @@ pub const GirFile = struct {
                 self.allocator,
                 docstring_slice,
                 "\n",
-                if (indent) "\n" ++ emit.pad ++ "/// " else "\n/// ",
+                if (indent) "\n" ++ PAD ++ "/// " else "\n/// ",
             );
             return try std.mem.concatWithSentinel(
                 self.allocator,

@@ -2,12 +2,35 @@ const std = @import("std");
 
 const gir = @import("girepository");
 
-const emit = @import("mod.zig");
+const mod = @import("mod.zig");
+const Type = mod.Type;
 
 pub const Field = struct {
     const Self = @This();
     name: [:0]const u8,
-    type: emit.@"type".Type,
+    type: Type,
+    pub fn from(
+        field_info: ?*gir.GIFieldInfo,
+        maybe_self_name: ?[:0]const u8,
+        dependencies: *std.StringHashMap(void),
+        target_namespace_name: []const u8,
+        allocator: std.mem.Allocator,
+    ) !Self {
+        const name = std.mem.sliceTo(gir.g_base_info_get_name(field_info), 0);
+        const type_info = gir.g_field_info_get_type(field_info);
+        defer gir.g_base_info_unref(type_info);
+        const @"type" = try Type.from(
+            type_info,
+            maybe_self_name,
+            dependencies,
+            target_namespace_name,
+            allocator,
+        );
+        return Self{
+            .name = name,
+            .type = @"type",
+        };
+    }
     pub fn toString(
         self: *const Self,
         allocator: std.mem.Allocator,
@@ -22,27 +45,3 @@ pub const Field = struct {
         );
     }
 };
-
-/// Parse a field
-pub fn from(
-    field: ?*gir.GIFieldInfo,
-    maybe_self_name: ?[:0]const u8,
-    dependencies: *std.StringHashMap(void),
-    target_namespace_name: []const u8,
-    allocator: std.mem.Allocator,
-) !Field {
-    const name = std.mem.sliceTo(gir.g_base_info_get_name(field), 0);
-    const type_info = gir.g_field_info_get_type(field);
-    defer gir.g_base_info_unref(type_info);
-    const @"type" = try emit.@"type".from(
-        type_info,
-        maybe_self_name,
-        dependencies,
-        target_namespace_name,
-        allocator,
-    );
-    return Field{
-        .name = name,
-        .type = @"type",
-    };
-}

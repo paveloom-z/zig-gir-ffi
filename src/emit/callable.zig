@@ -2,18 +2,99 @@ const std = @import("std");
 
 const gir = @import("girepository");
 
-const GirFile = @import("gir.zig").GirFile;
-
-const emit = @import("mod.zig");
+const mod = @import("mod.zig");
+const PAD = mod.PAD;
+const utils = mod.utils;
+const Arg = mod.Arg;
+const GirFile = mod.GirFile;
+const Type = mod.Type;
 
 pub const Callable = struct {
     const Self = @This();
     name: [:0]const u8,
-    args: []const emit.arg.Arg,
+    args: []const Arg,
     symbol: [:0]const u8,
     is_method: bool,
-    return_type: emit.@"type".Type,
+    return_type: Type,
     maybe_docstring: ?[:0]const u8,
+    pub fn from(
+        callable_info: ?*gir.GICallableInfo,
+        dependencies: *std.StringHashMap(void),
+        maybe_self_name: ?[:0]const u8,
+        target_namespace_name: []const u8,
+        gir_file: *const GirFile,
+        allocator: std.mem.Allocator,
+    ) !Self {
+        const name_snake_case = std.mem.sliceTo(gir.g_base_info_get_name(callable_info), 0);
+        const name_camel_case = try utils.toCamelCase(name_snake_case, allocator);
+        const is_method = gir.g_callable_info_is_method(callable_info) != 0;
+        const symbol = std.mem.sliceTo(gir.g_function_info_get_symbol(callable_info), 0);
+        // Get the documentation string
+        const docstring_expressions = &.{
+            try std.mem.concatWithSentinel(allocator, u8, &.{
+                "//core:function[@c:identifier=\"",
+                symbol,
+                "\"]/core:doc",
+            }, 0),
+            try std.mem.concatWithSentinel(allocator, u8, &.{
+                "//core:method[@c:identifier=\"",
+                symbol,
+                "\"]/core:doc",
+            }, 0),
+        };
+        const maybe_docstring = try gir_file.getDocstring(
+            symbol,
+            docstring_expressions,
+            true,
+        );
+        if (maybe_docstring == null) {
+            std.log.warn(
+                "Couldn't get the documentation string for `{s}`.",
+                .{symbol},
+            );
+        }
+        // Parse arguments
+        const args_n = gir.g_callable_info_get_n_args(callable_info);
+        const args = try allocator.alloc(
+            Arg,
+            @intCast(usize, args_n),
+        );
+        {
+            var i: usize = 0;
+            while (i < args_n) : (i += 1) {
+                const argument = gir.g_callable_info_get_arg(
+                    callable_info,
+                    @intCast(gir.gint, i),
+                );
+                defer gir.g_base_info_unref(argument);
+                args[i] = try Arg.from(
+                    argument,
+                    maybe_self_name,
+                    dependencies,
+                    target_namespace_name,
+                    allocator,
+                );
+            }
+        }
+        // Parse a return type
+        const return_type_info = gir.g_callable_info_get_return_type(callable_info);
+        defer gir.g_base_info_unref(return_type_info);
+        const return_type = try Type.from(
+            return_type_info,
+            maybe_self_name,
+            dependencies,
+            target_namespace_name,
+            allocator,
+        );
+        return Self{
+            .name = name_camel_case,
+            .args = args,
+            .is_method = is_method,
+            .symbol = symbol,
+            .return_type = return_type,
+            .maybe_docstring = maybe_docstring,
+        };
+    }
     pub fn toString(
         self: *const Self,
         allocator: std.mem.Allocator,
@@ -34,7 +115,7 @@ pub const Callable = struct {
         else
             "return ";
         const docstring = if (self.maybe_docstring) |docstring|
-            try std.mem.concat(allocator, u8, &.{ docstring, "\n", emit.pad })
+            try std.mem.concat(allocator, u8, &.{ docstring, "\n", PAD })
         else
             "";
         return try std.fmt.allocPrint(
@@ -56,83 +137,3 @@ pub const Callable = struct {
         );
     }
 };
-
-/// Parse a callable
-pub fn from(
-    callable_info: ?*gir.GICallableInfo,
-    dependencies: *std.StringHashMap(void),
-    maybe_self_name: ?[:0]const u8,
-    target_namespace_name: []const u8,
-    gir_file: *const GirFile,
-    allocator: std.mem.Allocator,
-) !Callable {
-    const name_snake_case = std.mem.sliceTo(gir.g_base_info_get_name(callable_info), 0);
-    const name_camel_case = try emit.utils.toCamelCase(name_snake_case, allocator);
-    const is_method = gir.g_callable_info_is_method(callable_info) != 0;
-    const symbol = std.mem.sliceTo(gir.g_function_info_get_symbol(callable_info), 0);
-    // Get the documentation string
-    const docstring_expressions = &.{
-        try std.mem.concatWithSentinel(allocator, u8, &.{
-            "//core:function[@c:identifier=\"",
-            symbol,
-            "\"]/core:doc",
-        }, 0),
-        try std.mem.concatWithSentinel(allocator, u8, &.{
-            "//core:method[@c:identifier=\"",
-            symbol,
-            "\"]/core:doc",
-        }, 0),
-    };
-    const maybe_docstring = try gir_file.getDocstring(
-        symbol,
-        docstring_expressions,
-        true,
-    );
-    if (maybe_docstring == null) {
-        std.log.warn(
-            "Couldn't get the documentation string for `{s}`.",
-            .{symbol},
-        );
-    }
-    // Parse arguments
-    const args_n = gir.g_callable_info_get_n_args(callable_info);
-    const args = try allocator.alloc(
-        emit.arg.Arg,
-        @intCast(usize, args_n),
-    );
-    {
-        var i: usize = 0;
-        while (i < args_n) : (i += 1) {
-            const argument = gir.g_callable_info_get_arg(
-                callable_info,
-                @intCast(gir.gint, i),
-            );
-            defer gir.g_base_info_unref(argument);
-            args[i] = try emit.arg.from(
-                argument,
-                maybe_self_name,
-                dependencies,
-                target_namespace_name,
-                allocator,
-            );
-        }
-    }
-    // Parse a return type
-    const return_type_info = gir.g_callable_info_get_return_type(callable_info);
-    defer gir.g_base_info_unref(return_type_info);
-    const return_type = try emit.@"type".from(
-        return_type_info,
-        maybe_self_name,
-        dependencies,
-        target_namespace_name,
-        allocator,
-    );
-    return Callable{
-        .name = name_camel_case,
-        .args = args,
-        .is_method = is_method,
-        .symbol = symbol,
-        .return_type = return_type,
-        .maybe_docstring = maybe_docstring,
-    };
-}
