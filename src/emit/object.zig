@@ -1,7 +1,8 @@
 const std = @import("std");
 
 const gir = @import("girepository");
-const xml = @import("xml");
+
+const GirFile = @import("gir.zig").GirFile;
 
 const emit = @import("mod.zig");
 const main = @import("../main.zig");
@@ -26,7 +27,7 @@ pub fn from(
     info: *gir.GIBaseInfo,
     info_name: [:0]const u8,
     subdir: *std.fs.Dir,
-    gir_context: xml.xmlXPathContextPtr,
+    gir_file: *const GirFile,
     allocator: std.mem.Allocator,
 ) ![:0]const u8 {
     const object = @ptrCast(*gir.GIObjectInfo, info);
@@ -66,12 +67,10 @@ pub fn from(
             "\"]/core:doc",
         }, 0),
     };
-    const maybe_docstring = try emit.getDocstring(
+    const maybe_docstring = try gir_file.getDocstring(
         info_name,
         expressions,
-        gir_context,
         false,
-        allocator,
     );
     if (maybe_docstring == null) {
         std.log.warn(
@@ -147,7 +146,7 @@ pub fn from(
                 &dependencies,
                 info_name,
                 target_namespace_name,
-                gir_context,
+                gir_file,
                 allocator,
             );
         }

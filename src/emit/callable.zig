@@ -1,7 +1,8 @@
 const std = @import("std");
 
 const gir = @import("girepository");
-const xml = @import("xml");
+
+const GirFile = @import("gir.zig").GirFile;
 
 const emit = @import("mod.zig");
 
@@ -62,7 +63,7 @@ pub fn from(
     dependencies: *std.StringHashMap(void),
     maybe_self_name: ?[:0]const u8,
     target_namespace_name: []const u8,
-    gir_context: xml.xmlXPathContextPtr,
+    gir_file: *const GirFile,
     allocator: std.mem.Allocator,
 ) !Callable {
     const name_snake_case = std.mem.sliceTo(gir.g_base_info_get_name(callable_info), 0);
@@ -82,12 +83,10 @@ pub fn from(
             "\"]/core:doc",
         }, 0),
     };
-    const maybe_docstring = try emit.getDocstring(
+    const maybe_docstring = try gir_file.getDocstring(
         symbol,
         docstring_expressions,
-        gir_context,
         true,
-        allocator,
     );
     if (maybe_docstring == null) {
         std.log.warn(

@@ -3,7 +3,7 @@ const std = @import("std");
 const clap = @import("clap");
 const gir = @import("girepository");
 
-const emit = @import("emit/mod.zig");
+const EmitRequest = @import("emit/mod.zig").EmitRequest;
 const input = @import("input.zig");
 
 /// Prepare output writers
@@ -148,15 +148,13 @@ pub fn main() !void {
         std.os.exit(1);
     };
     defer output_dir.close();
-    // Get the GObject Introspection repository manager
-    var repository = gir.g_irepository_get_default();
     // Emit code from the target namespace
-    emit.from(
-        repository,
-        args.target_namespace_name,
-        &output_dir,
-        allocator,
-    ) catch {
+    (EmitRequest{
+        .repository = gir.g_irepository_get_default(),
+        .target_namespace_name = args.target_namespace_name,
+        .output_dir = &output_dir,
+        .allocator = allocator,
+    }).emit() catch {
         std.log.err("Couldn't emit code from the target namespace.", .{});
         std.os.exit(1);
     };
