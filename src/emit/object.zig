@@ -56,128 +56,169 @@ pub const ObjectsSubdir = struct {
         info: *gir.GIBaseInfo,
         info_name: [:0]const u8,
     ) !void {
-        const object = @ptrCast(*gir.GIObjectInfo, info);
         std.log.info("Emitting object `{s}`...", .{info_name});
-        // Create a file
+
+        var object_file = try ObjectFile.new(self, info, info_name);
+        defer object_file.close();
+
+        try object_file.emit();
+
+        try self.file_paths.append(object_file.path);
+    }
+};
+
+const ObjectFile = struct {
+    const Self = @This();
+    const Dependencies = std.StringHashMap(void);
+    target_namespace_name: []const u8,
+    gir_file: *const GirFile,
+    info: *gir.GIObjectInfo,
+    name: [:0]const u8,
+    allocator: std.mem.Allocator,
+    file: std.fs.File,
+    path: [:0]const u8,
+    dependencies: Dependencies,
+    docstring: ?[:0]const u8 = undefined,
+    fields: []const Field = undefined,
+    methods: []const Callable = undefined,
+    fn getPath(name: [:0]const u8, allocator: std.mem.Allocator) ![:0]const u8 {
         const lowercase_info_name = try std.ascii.allocLowerString(
-            self.allocator,
-            info_name,
+            allocator,
+            name,
         );
-        const file_path = try std.mem.concatWithSentinel(
-            self.allocator,
+        return try std.mem.concatWithSentinel(
+            allocator,
             u8,
             &.{ lowercase_info_name, ".zig" },
             0,
         );
-        const file = self.subdir.createFile(file_path, .{}) catch {
+    }
+    fn create(subdir: std.fs.Dir, file_path: [:0]const u8) !std.fs.File {
+        return subdir.createFile(file_path, .{}) catch {
             std.log.warn("Couldn't create the `{s}` file.", .{file_path});
             return error.Error;
         };
-        defer file.close();
-        // Prepare a buffered writer
-        var buffered_writer = std.io.bufferedWriter(file.writer());
-        const writer = buffered_writer.writer();
-        defer buffered_writer.flush() catch {
-            std.log.warn(
-                "Couldn't flush the writer for the `{s}` file.",
-                .{file_path},
-            );
+    }
+    pub fn new(
+        objects_subdir: *ObjectsSubdir,
+        info: *gir.GIBaseInfo,
+        info_name: [:0]const u8,
+    ) !Self {
+        const target_namespace_name = objects_subdir.target_namespace_name;
+        const gir_file = objects_subdir.gir_file;
+        const subdir = objects_subdir.subdir;
+        const allocator = objects_subdir.allocator;
+
+        const path = try getPath(info_name, allocator);
+        const file = try create(subdir, path);
+        return Self{
+            .target_namespace_name = target_namespace_name,
+            .gir_file = gir_file,
+            .info = @ptrCast(*gir.GIObjectInfo, info),
+            .name = info_name,
+            .allocator = allocator,
+            .file = file,
+            .path = path,
+            .dependencies = Dependencies.init(allocator),
         };
-        // Prepare a hashset for dependencies
-        var dependencies = std.StringHashMap(void).init(self.allocator);
-        // Get the documentation string
+    }
+    pub fn close(self: *Self) void {
+        self.file.close();
+    }
+    fn parseDocstring(self: *Self) !void {
         const expressions = &.{
             try std.mem.concatWithSentinel(self.allocator, u8, &.{
                 "//core:class[@name=\"",
-                info_name,
+                self.name,
                 "\"]/core:doc",
             }, 0),
         };
-        const maybe_docstring = try self.gir_file.getDocstring(
-            info_name,
+        self.docstring = try self.gir_file.getDocstring(
+            self.name,
             expressions,
             false,
         );
-        if (maybe_docstring == null) {
+        if (self.docstring == null) {
             std.log.warn(
                 "Couldn't get the documentation string for `{s}`.",
-                .{info_name},
+                .{self.name},
             );
         }
-        // Parse constants
-        const constants_n = gir.g_object_info_get_n_constants(object);
-        {
-            var i: usize = 0;
-            while (i < constants_n) : (i += 1) {
-                const constant = gir.g_object_info_get_constant(
-                    info,
-                    @intCast(gir.gint, i),
-                );
-                defer gir.g_base_info_unref(constant);
-                std.log.warn("TODO: Object Constants", .{});
-            }
+    }
+    fn parseConstants(self: *Self) void {
+        const constants_n = gir.g_object_info_get_n_constants(self.info);
+        var i: usize = 0;
+        while (i < constants_n) : (i += 1) {
+            const constant = gir.g_object_info_get_constant(
+                self.info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(constant);
+            std.log.warn("TODO: Object Constants", .{});
         }
-        // Parse fields
-        const fields_n = gir.g_object_info_get_n_fields(object);
+    }
+    fn parseFields(self: *Self) !void {
+        const fields_n = gir.g_object_info_get_n_fields(self.info);
         const fields = try self.allocator.alloc(
             Field,
             @intCast(usize, fields_n),
         );
-        {
-            var i: usize = 0;
-            while (i < fields_n) : (i += 1) {
-                const field = gir.g_object_info_get_field(
-                    info,
-                    @intCast(gir.gint, i),
-                );
-                defer gir.g_base_info_unref(field);
-                fields[i] = try Field.from(
-                    field,
-                    info_name,
-                    &dependencies,
-                    self.target_namespace_name,
-                    self.allocator,
-                );
-            }
+        var i: usize = 0;
+        while (i < fields_n) : (i += 1) {
+            const field = gir.g_object_info_get_field(
+                self.info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(field);
+            fields[i] = try Field.from(
+                field,
+                self.name,
+                &self.dependencies,
+                self.target_namespace_name,
+                self.allocator,
+            );
         }
-        // Parse interfaces
-        const interfaces_n = gir.g_object_info_get_n_interfaces(object);
+        self.fields = fields;
+    }
+    fn parseInterfaces(self: *Self) void {
+        const interfaces_n = gir.g_object_info_get_n_interfaces(self.info);
         {
             var i: usize = 0;
             while (i < interfaces_n) : (i += 1) {
                 const interface = gir.g_object_info_get_interface(
-                    info,
+                    self.info,
                     @intCast(gir.gint, i),
                 );
                 defer gir.g_base_info_unref(interface);
                 std.log.warn("TODO: Object Interfaces", .{});
             }
         }
-        // Parse methods
-        const methods_n = gir.g_object_info_get_n_methods(object);
+    }
+    fn parseMethods(self: *Self) !void {
+        const methods_n = gir.g_object_info_get_n_methods(self.info);
         const methods = try self.allocator.alloc(
             Callable,
             @intCast(usize, methods_n),
         );
-        {
-            var i: usize = 0;
-            while (i < methods_n) : (i += 1) {
-                const method = gir.g_object_info_get_method(
-                    info,
-                    @intCast(gir.gint, i),
-                );
-                defer gir.g_base_info_unref(method);
-                methods[i] = try Callable.from(
-                    method,
-                    &dependencies,
-                    info_name,
-                    self.target_namespace_name,
-                    self.gir_file,
-                    self.allocator,
-                );
-            }
+        var i: usize = 0;
+        while (i < methods_n) : (i += 1) {
+            const method = gir.g_object_info_get_method(
+                self.info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(method);
+            methods[i] = try Callable.from(
+                method,
+                self.name,
+                &self.dependencies,
+                self.target_namespace_name,
+                self.gir_file,
+                self.allocator,
+            );
         }
-        // Print the results
+        self.methods = methods;
+    }
+    fn write(self: *const Self, writer: anytype) !void {
         try writer.print(
             \\const lib = @import("../lib.zig");
             \\
@@ -187,31 +228,53 @@ pub const ObjectsSubdir = struct {
         ,
             .{},
         );
-        var dependencies_iterator = dependencies.keyIterator();
+
+        var dependencies_iterator = self.dependencies.keyIterator();
         while (dependencies_iterator.next()) |dependency| {
             try writer.print("const {0s} = lib.{0s};\n", .{dependency.*});
         }
-        if (maybe_docstring) |docstring| {
+
+        if (self.docstring) |docstring| {
             try writer.print("\n{s}", .{docstring});
         }
+
         try writer.print(
             \\
             \\pub const {s} = extern struct {{
             \\    const Self = @This();
             \\
         ,
-            .{info_name},
+            .{self.name},
         );
-        for (fields) |field| {
+
+        for (self.fields) |field| {
             const string = try field.toString(self.allocator);
             try writer.print("{s}", .{string});
         }
-        for (methods) |method| {
+
+        for (self.methods) |method| {
             const string = try method.toString(self.allocator);
             try writer.print("{s}", .{string});
         }
-        try writer.print("}};\n", .{});
 
-        try self.file_paths.append(file_path);
+        try writer.print("}};\n", .{});
+    }
+    pub fn emit(self: *Self) !void {
+        var buffered_writer = std.io.bufferedWriter(self.file.writer());
+        const writer = buffered_writer.writer();
+        defer buffered_writer.flush() catch {
+            std.log.warn(
+                "Couldn't flush the writer for the `{s}` file.",
+                .{self.path},
+            );
+        };
+
+        try self.parseDocstring();
+        self.parseConstants();
+        try self.parseFields();
+        self.parseInterfaces();
+        try self.parseMethods();
+
+        try self.write(writer);
     }
 };

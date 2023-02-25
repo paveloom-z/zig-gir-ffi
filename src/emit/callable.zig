@@ -19,8 +19,8 @@ pub const Callable = struct {
     maybe_docstring: ?[:0]const u8,
     pub fn from(
         callable_info: ?*gir.GICallableInfo,
-        dependencies: *std.StringHashMap(void),
         maybe_self_name: ?[:0]const u8,
+        dependencies: *std.StringHashMap(void),
         target_namespace_name: []const u8,
         gir_file: *const GirFile,
         allocator: std.mem.Allocator,
