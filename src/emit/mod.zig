@@ -12,8 +12,9 @@ pub const Type = @import("type.zig").Type;
 
 pub const utils = @import("utils.zig");
 
-/// The indentation padding
 pub const PAD = " " ** 4;
+
+pub const Dependencies = std.StringHashMap(void);
 
 pub const EmitRequest = struct {
     const Self = @This();
@@ -90,12 +91,12 @@ pub const EmitRequest = struct {
         var objects_subdir = try ObjectsSubdir.from(self, &gir_file);
         defer objects_subdir.close();
 
-        const infos_n = gir.g_irepository_get_n_infos(
+        const n = gir.g_irepository_get_n_infos(
             self.repository,
             self.target_namespace_name.ptr,
         );
         var i: gir.gint = 0;
-        while (i < infos_n) : (i += 1) {
+        while (i < n) : (i += 1) {
             const info = gir.g_irepository_get_info(
                 self.repository,
                 self.target_namespace_name.ptr,

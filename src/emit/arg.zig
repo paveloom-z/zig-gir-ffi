@@ -11,7 +11,7 @@ pub const Arg = struct {
     @"type": Type,
     pub fn from(
         arg_info: ?*gir.GIArgInfo,
-        maybe_self_name: ?[:0]const u8,
+        maybe_parent_name: ?[:0]const u8,
         dependencies: *std.StringHashMap(void),
         target_namespace_name: []const u8,
         allocator: std.mem.Allocator,
@@ -21,7 +21,7 @@ pub const Arg = struct {
         defer gir.g_base_info_unref(type_info);
         const @"type" = try Type.from(
             type_info,
-            maybe_self_name,
+            maybe_parent_name,
             dependencies,
             target_namespace_name,
             allocator,

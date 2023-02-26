@@ -8,7 +8,7 @@ pub const Type = struct {
     is_void: bool,
     pub fn from(
         type_info: *gir.GITypeInfo,
-        maybe_self_name: ?[:0]const u8,
+        maybe_parent_name: ?[:0]const u8,
         dependencies: *std.StringHashMap(void),
         target_namespace_name: []const u8,
         allocator: std.mem.Allocator,
@@ -72,7 +72,7 @@ pub const Type = struct {
                         defer gir.g_base_info_unref(param_type_info);
                         const param_type = try from(
                             param_type_info,
-                            maybe_self_name,
+                            maybe_parent_name,
                             dependencies,
                             target_namespace_name,
                             allocator,
@@ -117,11 +117,11 @@ pub const Type = struct {
                     0,
                 );
                 const is_self = is_self: {
-                    if (maybe_self_name) |self_name| {
+                    if (maybe_parent_name) |parent_name| {
                         break :is_self std.mem.eql(
                             u8,
                             interface_name,
-                            self_name,
+                            parent_name,
                         );
                     } else {
                         break :is_self false;

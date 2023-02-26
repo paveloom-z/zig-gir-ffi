@@ -4,6 +4,7 @@ const gir = @import("girepository");
 
 const mod = @import("mod.zig");
 const Callable = mod.Callable;
+const Dependencies = mod.Dependencies;
 const EmitRequest = mod.EmitRequest;
 const Field = mod.Field;
 const GirFile = mod.GirFile;
@@ -69,7 +70,6 @@ pub const ObjectsSubdir = struct {
 
 const ObjectFile = struct {
     const Self = @This();
-    const Dependencies = std.StringHashMap(void);
     target_namespace_name: []const u8,
     gir_file: *const GirFile,
     info: *gir.GIObjectInfo,
@@ -78,7 +78,7 @@ const ObjectFile = struct {
     file: std.fs.File,
     path: [:0]const u8,
     dependencies: Dependencies,
-    docstring: ?[:0]const u8 = undefined,
+    maybe_docstring: ?[:0]const u8 = undefined,
     fields: []const Field = undefined,
     methods: []const Callable = undefined,
     fn getPath(name: [:0]const u8, allocator: std.mem.Allocator) ![:0]const u8 {
@@ -133,12 +133,12 @@ const ObjectFile = struct {
                 "\"]/core:doc",
             }, 0),
         };
-        self.docstring = try self.gir_file.getDocstring(
+        self.maybe_docstring = try self.gir_file.getDocstring(
             self.name,
             expressions,
             false,
         );
-        if (self.docstring == null) {
+        if (self.maybe_docstring == null) {
             std.log.warn(
                 "Couldn't get the documentation string for `{s}`.",
                 .{self.name},
@@ -146,9 +146,9 @@ const ObjectFile = struct {
         }
     }
     fn parseConstants(self: *Self) void {
-        const constants_n = gir.g_object_info_get_n_constants(self.info);
+        const n = gir.g_object_info_get_n_constants(self.info);
         var i: usize = 0;
-        while (i < constants_n) : (i += 1) {
+        while (i < n) : (i += 1) {
             const constant = gir.g_object_info_get_constant(
                 self.info,
                 @intCast(gir.gint, i),
@@ -158,13 +158,13 @@ const ObjectFile = struct {
         }
     }
     fn parseFields(self: *Self) !void {
-        const fields_n = gir.g_object_info_get_n_fields(self.info);
+        const n = gir.g_object_info_get_n_fields(self.info);
         const fields = try self.allocator.alloc(
             Field,
-            @intCast(usize, fields_n),
+            @intCast(usize, n),
         );
         var i: usize = 0;
-        while (i < fields_n) : (i += 1) {
+        while (i < n) : (i += 1) {
             const field = gir.g_object_info_get_field(
                 self.info,
                 @intCast(gir.gint, i),
@@ -181,38 +181,36 @@ const ObjectFile = struct {
         self.fields = fields;
     }
     fn parseInterfaces(self: *Self) void {
-        const interfaces_n = gir.g_object_info_get_n_interfaces(self.info);
-        {
-            var i: usize = 0;
-            while (i < interfaces_n) : (i += 1) {
-                const interface = gir.g_object_info_get_interface(
-                    self.info,
-                    @intCast(gir.gint, i),
-                );
-                defer gir.g_base_info_unref(interface);
-                std.log.warn("TODO: Object Interfaces", .{});
-            }
+        const n = gir.g_object_info_get_n_interfaces(self.info);
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const interface = gir.g_object_info_get_interface(
+                self.info,
+                @intCast(gir.gint, i),
+            );
+            defer gir.g_base_info_unref(interface);
+            std.log.warn("TODO: Object Interfaces", .{});
         }
     }
     fn parseMethods(self: *Self) !void {
-        const methods_n = gir.g_object_info_get_n_methods(self.info);
+        const n = gir.g_object_info_get_n_methods(self.info);
         const methods = try self.allocator.alloc(
             Callable,
-            @intCast(usize, methods_n),
+            @intCast(usize, n),
         );
         var i: usize = 0;
-        while (i < methods_n) : (i += 1) {
+        while (i < n) : (i += 1) {
             const method = gir.g_object_info_get_method(
                 self.info,
                 @intCast(gir.gint, i),
             );
             defer gir.g_base_info_unref(method);
             methods[i] = try Callable.from(
+                self.target_namespace_name,
+                self.gir_file,
                 method,
                 self.name,
                 &self.dependencies,
-                self.target_namespace_name,
-                self.gir_file,
                 self.allocator,
             );
         }
@@ -234,7 +232,7 @@ const ObjectFile = struct {
             try writer.print("const {0s} = lib.{0s};\n", .{dependency.*});
         }
 
-        if (self.docstring) |docstring| {
+        if (self.maybe_docstring) |docstring| {
             try writer.print("\n{s}", .{docstring});
         }
 
