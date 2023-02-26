@@ -71,7 +71,8 @@ const ObjectFile = struct {
     repository: *const Repository,
     subdir: std.fs.Dir,
     info: *gir.GIObjectInfo,
-    name: [:0]const u8,
+    info_name: [:0]const u8,
+    type_name: [:0]const u8,
     file: std.fs.File = undefined,
     path: [:0]const u8 = undefined,
     dependencies: Dependencies = undefined,
@@ -81,7 +82,7 @@ const ObjectFile = struct {
     fn getPath(self: *Self) !void {
         const lowercase_info_name = try std.ascii.allocLowerString(
             self.repository.allocator,
-            self.name,
+            self.info_name,
         );
         self.path = try std.mem.concatWithSentinel(
             self.repository.allocator,
@@ -101,11 +102,13 @@ const ObjectFile = struct {
         info: *gir.GIBaseInfo,
         info_name: [:0]const u8,
     ) !Self {
+        const type_name = std.mem.sliceTo(gir.g_object_info_get_type_name(info), 0);
         var self = Self{
             .repository = objects_subdir.repository,
             .subdir = objects_subdir.subdir,
             .info = @ptrCast(*gir.GIObjectInfo, info),
-            .name = info_name,
+            .info_name = info_name,
+            .type_name = type_name,
         };
         self.dependencies = Dependencies.init(self.repository.allocator);
         try self.getPath();
@@ -119,19 +122,19 @@ const ObjectFile = struct {
         const expressions = &.{
             try std.mem.concatWithSentinel(self.repository.allocator, u8, &.{
                 "//core:class[@name=\"",
-                self.name,
+                self.info_name,
                 "\"]/core:doc",
             }, 0),
         };
         self.maybe_docstring = try self.repository.gir_file.getDocstring(
-            self.name,
+            self.info_name,
             expressions,
             false,
         );
         if (self.maybe_docstring == null) {
             std.log.warn(
                 "Couldn't get the documentation string for `{s}`.",
-                .{self.name},
+                .{self.info_name},
             );
         }
     }
@@ -163,7 +166,7 @@ const ObjectFile = struct {
             fields[i] = try Field.from(
                 self.repository,
                 field_info,
-                self.name,
+                self.info_name,
                 &self.dependencies,
             );
         }
@@ -197,7 +200,7 @@ const ObjectFile = struct {
             methods[i] = try Callable.from(
                 self.repository,
                 method_info,
-                self.name,
+                self.info_name,
                 &self.dependencies,
             );
         }
@@ -208,6 +211,7 @@ const ObjectFile = struct {
             \\const lib = @import("../lib.zig");
             \\
             \\const c = lib.c;
+            \\const Cast = lib.Cast;
             \\
             \\
         ,
@@ -227,9 +231,10 @@ const ObjectFile = struct {
             \\
             \\pub const {s} = extern struct {{
             \\    const Self = @This();
+            \\    pub const C = c.{s};
             \\
         ,
-            .{self.name},
+            .{ self.info_name, self.type_name },
         );
 
         for (self.fields) |field| {
@@ -237,8 +242,13 @@ const ObjectFile = struct {
             try writer.print("{s}", .{string});
         }
 
+        try writer.print(
+            \\    usingnamespace Cast(Self);
+            \\
+        , .{});
+
         for (self.methods) |method| {
-            const string = try method.toString(self.repository.allocator);
+            const string = try method.toString();
             try writer.print("{s}", .{string});
         }
 

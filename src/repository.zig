@@ -65,14 +65,15 @@ pub const Repository = struct {
         return self;
     }
     fn createLibFile(self: *const Self) !void {
-        var lib_file = self.output_dir.createFile("lib.zig", .{}) catch {
+        var file = self.output_dir.createFile("lib.zig", .{}) catch {
             std.log.warn("Couldn't create the `lib.zig` file.", .{});
             return error.Error;
         };
-        defer lib_file.close();
-        var lib_file_writer = lib_file.writer();
-        try lib_file_writer.print(
+        defer file.close();
+        var writer = file.writer();
+        try writer.print(
             \\pub usingnamespace @import("c.zig");
+            \\pub usingnamespace @import("cast.zig");
             \\
             \\pub usingnamespace @import("objects/mod.zig");
             \\
@@ -81,17 +82,47 @@ pub const Repository = struct {
         );
     }
     fn createCFile(self: *const Self) !void {
-        var c_file = self.output_dir.createFile("c.zig", .{}) catch {
+        var file = self.output_dir.createFile("c.zig", .{}) catch {
             std.log.warn("Couldn't create the `c.zig` file.", .{});
             return error.Error;
         };
-        defer c_file.close();
-        var c_file_writer = c_file.writer();
-        try c_file_writer.print(
+        defer file.close();
+        var writer = file.writer();
+        try writer.print(
             \\pub usingnamespace @cImport({{
             \\    @cInclude("girepository.h");
             \\}});
             \\
+        ,
+            .{},
+        );
+    }
+    fn createCastFile(self: *const Self) !void {
+        var file = self.output_dir.createFile("cast.zig", .{}) catch {
+            std.log.warn("Couldn't create the `cast.zig` file.", .{});
+            return error.Error;
+        };
+        defer file.close();
+        var writer = file.writer();
+        try writer.print(
+            \\const std = @import("std");
+            \\
+            \\pub fn Cast(comptime T: type) type {{
+            \\    return struct {{
+            \\        pub inline fn toC(ptr: anytype) ?*T.C {{
+            \\            return @ptrCast(?*T.C, ptr);
+            \\        }}
+            \\        pub inline fn toConstC(ptr: anytype) ?*const T.C {{
+            \\            return @ptrCast(?*const T.C, ptr);
+            \\        }}
+            \\        pub inline fn fromC(ptr: anytype) ?*T {{
+            \\            return @ptrCast(?*T, ptr);
+            \\        }}
+            \\        pub inline fn fromConstC(ptr: anytype) ?*const T {{
+            \\            return @ptrCast(?*const T, ptr);
+            \\        }}
+            \\    }};
+            \\}}
         ,
             .{},
         );
@@ -188,6 +219,7 @@ pub const Repository = struct {
 
         try self.createLibFile();
         try self.createCFile();
+        try self.createCastFile();
 
         try objects_subdir.emitModFile();
     }

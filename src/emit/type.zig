@@ -9,6 +9,7 @@ pub const Type = struct {
     const Self = @This();
     name: [:0]const u8,
     is_void: bool,
+    is_interface: bool,
     pub fn from(
         repository: *const Repository,
         type_info: *gir.GITypeInfo,
@@ -17,8 +18,14 @@ pub const Type = struct {
     ) !Self {
         const is_pointer = gir.g_type_info_is_pointer(type_info) != 0;
         const tag = gir.g_type_info_get_tag(type_info);
+
+        var is_void = false;
+        var is_interface = false;
         const name = switch (tag) {
-            gir.GI_TYPE_TAG_VOID => "void",
+            gir.GI_TYPE_TAG_VOID => out: {
+                is_void = true;
+                break :out "void";
+            },
             gir.GI_TYPE_TAG_BOOLEAN => "bool",
             gir.GI_TYPE_TAG_INT8 => switch (is_pointer) {
                 true => "?*i8",
@@ -107,6 +114,7 @@ pub const Type = struct {
                 }
             },
             gir.GI_TYPE_TAG_INTERFACE => out: {
+                is_interface = true;
                 const interface = gir.g_type_info_get_interface(type_info);
                 defer gir.g_base_info_unref(interface);
                 const interface_name = std.mem.sliceTo(
@@ -190,10 +198,10 @@ pub const Type = struct {
                 return error.Error;
             },
         };
-        const is_void = std.mem.eql(u8, name, "void");
         return Self{
             .name = name,
             .is_void = is_void,
+            .is_interface = is_interface,
         };
     }
 };

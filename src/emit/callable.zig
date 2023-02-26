@@ -105,31 +105,31 @@ pub const Callable = struct {
 
         return self;
     }
-    pub fn toString(
-        self: *const Self,
-        allocator: std.mem.Allocator,
-    ) ![]const u8 {
-        var args_signature = std.ArrayList([]const u8).init(allocator);
-        var args_call = std.ArrayList([]const u8).init(allocator);
+    pub fn toString(self: *const Self) ![]const u8 {
+        var args_signature = std.ArrayList([]const u8).init(self.repository.allocator);
+        var args_call = std.ArrayList([]const u8).init(self.repository.allocator);
         if (self.is_method) {
             try args_signature.append("self: *Self");
             try args_call.append("self");
         }
         for (self.args) |arg| {
-            const string = try arg.toString(allocator);
+            const string = try arg.toString(self.repository.allocator);
             try args_signature.append(string);
-            try args_call.append(arg.name);
+            try args_call.append(if (arg.type.is_interface)
+                try std.mem.concat(self.repository.allocator, u8, &.{ arg.name, ".toC()" })
+            else
+                arg.name);
         }
         const return_string = if (self.return_type.is_void)
             ""
         else
             "return ";
         const docstring = if (self.maybe_docstring) |docstring|
-            try std.mem.concat(allocator, u8, &.{ docstring, "\n", PAD })
+            try std.mem.concat(self.repository.allocator, u8, &.{ docstring, "\n", PAD })
         else
             "";
         return try std.fmt.allocPrint(
-            allocator,
+            self.repository.allocator,
             \\    {s}pub fn {s}({s}) {s} {{
             \\        {s}c.{s}({s});
             \\    }}
@@ -138,11 +138,11 @@ pub const Callable = struct {
             .{
                 docstring,
                 self.name,
-                try std.mem.join(allocator, ", ", args_signature.items),
+                try std.mem.join(self.repository.allocator, ", ", args_signature.items),
                 self.return_type.name,
                 return_string,
                 self.symbol,
-                try std.mem.join(allocator, ", ", args_call.items),
+                try std.mem.join(self.repository.allocator, ", ", args_call.items),
             },
         );
     }
