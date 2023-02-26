@@ -3,10 +3,9 @@ const std = @import("std");
 const clap = @import("clap");
 const gir = @import("girepository");
 
-const EmitRequest = @import("emit/mod.zig").EmitRequest;
+const Repository = @import("repository.zig").Repository;
 const input = @import("input.zig");
 
-/// Prepare output writers
 const stderr = std.io.getStdErr().writer();
 const stdout = std.io.getStdOut().writer();
 
@@ -37,13 +36,11 @@ pub fn log(
     nosuspend stderr.print(level_txt ++ prefix ++ format ++ "\n", args) catch return;
 }
 
-/// Command-line arguments
 const Args = struct {
     target_namespace_name: []const u8,
     output_directory_path: []const u8,
 };
 
-/// Command-line parameters
 const Params = clap.parseParamsComptime(
     \\    --help
     \\      Display this help and exit.
@@ -56,9 +53,7 @@ const Params = clap.parseParamsComptime(
     \\
 );
 
-// Parse the command-line arguments
 fn parseArgs() !Args {
-    // Parse the command-line arguments
     var diag = clap.Diagnostic{};
     var res = clap.parse(clap.Help, &Params, clap.parsers.default, .{
         .diagnostic = &diag,
@@ -88,7 +83,7 @@ fn parseArgs() !Args {
         return error.Error;
     };
     defer res.deinit();
-    // Show help if requested
+
     if (res.args.help) {
         try stdout.print("{s}\n{s}\n{s}\n\n{s}", .{
             green ++ "zig-gir-ffi" ++ reset ++ " 0.1.0",
@@ -99,7 +94,7 @@ fn parseArgs() !Args {
         try clap.help(stdout, clap.Help, &Params, .{});
         std.os.exit(0);
     }
-    // Unpack the arguments
+
     const target_namespace_name = res.args.target orelse {
         std.log.err("A name of the target namespace is required.", .{});
         std.os.exit(1);
@@ -108,54 +103,57 @@ fn parseArgs() !Args {
         std.log.err("A path to the output directory is required.", .{});
         std.os.exit(1);
     };
-    // Return the arguments
+
     return Args{
         .target_namespace_name = target_namespace_name,
         .output_directory_path = output_directory_path,
     };
 }
 
-/// A callback in case of an interrupt
-fn onInterrupt(signal: c_int) align(1) callconv(.C) void {
-    _ = signal;
-    std.os.exit(1);
-}
-
-/// Run the program
-pub fn main() !void {
-    // Parse the arguments
-    const args = parseArgs() catch {
-        std.log.err(
-            "Couldn't parse the arguments.",
-            .{},
-        );
-        std.os.exit(1);
-    };
-    // Setup an interrupt signal handler
+fn setupInterrupt() !void {
     const sigaction = std.os.Sigaction{
         .handler = .{ .handler = onInterrupt },
         .mask = std.os.empty_sigset,
         .flags = 0,
     };
     try std.os.sigaction(std.os.SIG.INT, &sigaction, null);
-    // Prepare an arena-wrapped allocator
+}
+
+fn onInterrupt(signal: c_int) align(1) callconv(.C) void {
+    _ = signal;
+    std.os.exit(1);
+}
+
+pub fn main() !void {
+    const args = parseArgs() catch {
+        std.log.err("Couldn't parse the arguments.", .{});
+        std.os.exit(1);
+    };
+
+    try setupInterrupt();
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
     defer arena.deinit();
-    // Prepare an output directory
+
     var output_dir = input.getOutputDir(args.output_directory_path) catch {
         std.log.err("Couldn't get the output directory.", .{});
         std.os.exit(1);
     };
     defer output_dir.close();
-    // Emit code from the target namespace
-    (EmitRequest{
-        .repository = gir.g_irepository_get_default(),
-        .target_namespace_name = args.target_namespace_name,
-        .output_dir = &output_dir,
-        .allocator = allocator,
-    }).emit() catch {
-        std.log.err("Couldn't emit code from the target namespace.", .{});
+
+    const repository = Repository.load(
+        args.target_namespace_name,
+        &output_dir,
+        allocator,
+    ) catch {
+        std.log.err("Couldn't load the repository.", .{});
+        std.os.exit(1);
+    };
+    defer repository.cleanup();
+
+    repository.emit() catch {
+        std.log.err("Couldn't emit code from the repository.", .{});
         std.os.exit(1);
     };
 }

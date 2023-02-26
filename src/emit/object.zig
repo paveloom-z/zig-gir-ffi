@@ -5,33 +5,31 @@ const gir = @import("girepository");
 const mod = @import("mod.zig");
 const Callable = mod.Callable;
 const Dependencies = mod.Dependencies;
-const EmitRequest = mod.EmitRequest;
 const Field = mod.Field;
 const GirFile = mod.GirFile;
+const Repository = mod.Repository;
 
 pub const ObjectsSubdir = struct {
     const Self = @This();
     const FilePaths = std.ArrayList([]const u8);
-    target_namespace_name: []const u8,
-    gir_file: *const GirFile,
+    const subdir_name = "objects";
+    repository: *const Repository,
     subdir: std.fs.Dir,
     file_paths: FilePaths,
     allocator: std.mem.Allocator,
-    pub fn from(emit_request: *const EmitRequest, gir_file: *const GirFile) !Self {
-        const subdir_path = "objects";
-        const subdir = emit_request.output_dir.makeOpenPath(subdir_path, .{}) catch {
+    pub fn from(repository: *const Repository) !Self {
+        const subdir = repository.output_dir.makeOpenPath(subdir_name, .{}) catch {
             std.log.err(
                 "Couldn't create the `{s}` subdirectory.",
-                .{subdir_path},
+                .{subdir_name},
             );
             return error.Error;
         };
         return Self{
-            .target_namespace_name = emit_request.target_namespace_name,
-            .gir_file = gir_file,
+            .repository = repository,
             .subdir = subdir,
-            .file_paths = FilePaths.init(emit_request.allocator),
-            .allocator = emit_request.allocator,
+            .file_paths = FilePaths.init(repository.allocator),
+            .allocator = repository.allocator,
         };
     }
     pub fn close(self: *Self) void {
@@ -70,70 +68,62 @@ pub const ObjectsSubdir = struct {
 
 const ObjectFile = struct {
     const Self = @This();
-    target_namespace_name: []const u8,
-    gir_file: *const GirFile,
+    repository: *const Repository,
+    subdir: std.fs.Dir,
     info: *gir.GIObjectInfo,
     name: [:0]const u8,
-    allocator: std.mem.Allocator,
-    file: std.fs.File,
-    path: [:0]const u8,
-    dependencies: Dependencies,
+    file: std.fs.File = undefined,
+    path: [:0]const u8 = undefined,
+    dependencies: Dependencies = undefined,
     maybe_docstring: ?[:0]const u8 = undefined,
     fields: []const Field = undefined,
     methods: []const Callable = undefined,
-    fn getPath(name: [:0]const u8, allocator: std.mem.Allocator) ![:0]const u8 {
+    fn getPath(self: *Self) !void {
         const lowercase_info_name = try std.ascii.allocLowerString(
-            allocator,
-            name,
+            self.repository.allocator,
+            self.name,
         );
-        return try std.mem.concatWithSentinel(
-            allocator,
+        self.path = try std.mem.concatWithSentinel(
+            self.repository.allocator,
             u8,
             &.{ lowercase_info_name, ".zig" },
             0,
         );
     }
-    fn create(subdir: std.fs.Dir, file_path: [:0]const u8) !std.fs.File {
-        return subdir.createFile(file_path, .{}) catch {
-            std.log.warn("Couldn't create the `{s}` file.", .{file_path});
+    fn createFile(self: *Self) !void {
+        self.file = self.subdir.createFile(self.path, .{}) catch {
+            std.log.warn("Couldn't create the `{s}` file.", .{self.path});
             return error.Error;
         };
     }
     pub fn new(
-        objects_subdir: *ObjectsSubdir,
+        objects_subdir: *const ObjectsSubdir,
         info: *gir.GIBaseInfo,
         info_name: [:0]const u8,
     ) !Self {
-        const target_namespace_name = objects_subdir.target_namespace_name;
-        const gir_file = objects_subdir.gir_file;
-        const subdir = objects_subdir.subdir;
-        const allocator = objects_subdir.allocator;
-
-        const path = try getPath(info_name, allocator);
-        const file = try create(subdir, path);
-        return Self{
-            .target_namespace_name = target_namespace_name,
-            .gir_file = gir_file,
+        var self = Self{
+            .repository = objects_subdir.repository,
+            .subdir = objects_subdir.subdir,
             .info = @ptrCast(*gir.GIObjectInfo, info),
             .name = info_name,
-            .allocator = allocator,
-            .file = file,
-            .path = path,
-            .dependencies = Dependencies.init(allocator),
         };
+        self.dependencies = Dependencies.init(self.repository.allocator);
+        try self.getPath();
+        try self.createFile();
+        return self;
     }
     pub fn close(self: *Self) void {
         self.file.close();
     }
     fn parseDocstring(self: *Self) !void {
         const expressions = &.{
-            try std.mem.concatWithSentinel(self.allocator, u8, &.{
+            try std.mem.concatWithSentinel(self.repository.allocator, u8, &.{
                 "//core:class[@name=\"",
                 self.name,
                 "\"]/core:doc",
             }, 0),
         };
-        self.maybe_docstring = try self.gir_file.getDocstring(
+        self.maybe_docstring = try self.repository.gir_file.getDocstring(
             self.name,
             expressions,
             false,
@@ -159,23 +149,22 @@ const ObjectFile = struct {
     }
     fn parseFields(self: *Self) !void {
         const n = gir.g_object_info_get_n_fields(self.info);
-        const fields = try self.allocator.alloc(
+        const fields = try self.repository.allocator.alloc(
             Field,
             @intCast(usize, n),
         );
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const field = gir.g_object_info_get_field(
+            const field_info = gir.g_object_info_get_field(
                 self.info,
                 @intCast(gir.gint, i),
             );
-            defer gir.g_base_info_unref(field);
+            defer gir.g_base_info_unref(field_info);
             fields[i] = try Field.from(
-                field,
+                self.repository,
+                field_info,
                 self.name,
                 &self.dependencies,
-                self.target_namespace_name,
-                self.allocator,
             );
         }
         self.fields = fields;
@@ -184,34 +173,32 @@ const ObjectFile = struct {
         const n = gir.g_object_info_get_n_interfaces(self.info);
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const interface = gir.g_object_info_get_interface(
+            const interface_info = gir.g_object_info_get_interface(
                 self.info,
                 @intCast(gir.gint, i),
             );
-            defer gir.g_base_info_unref(interface);
+            defer gir.g_base_info_unref(interface_info);
             std.log.warn("TODO: Object Interfaces", .{});
         }
     }
     fn parseMethods(self: *Self) !void {
         const n = gir.g_object_info_get_n_methods(self.info);
-        const methods = try self.allocator.alloc(
+        const methods = try self.repository.allocator.alloc(
             Callable,
             @intCast(usize, n),
         );
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const method = gir.g_object_info_get_method(
+            const method_info = gir.g_object_info_get_method(
                 self.info,
                 @intCast(gir.gint, i),
             );
-            defer gir.g_base_info_unref(method);
+            defer gir.g_base_info_unref(method_info);
             methods[i] = try Callable.from(
-                self.target_namespace_name,
-                self.gir_file,
-                method,
+                self.repository,
+                method_info,
                 self.name,
                 &self.dependencies,
-                self.allocator,
             );
         }
         self.methods = methods;
@@ -246,12 +233,12 @@ const ObjectFile = struct {
         );
 
         for (self.fields) |field| {
-            const string = try field.toString(self.allocator);
+            const string = try field.toString(self.repository.allocator);
             try writer.print("{s}", .{string});
         }
 
         for (self.methods) |method| {
-            const string = try method.toString(self.allocator);
+            const string = try method.toString(self.repository.allocator);
             try writer.print("{s}", .{string});
         }
 

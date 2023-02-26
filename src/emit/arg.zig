@@ -3,6 +3,7 @@ const std = @import("std");
 const gir = @import("girepository");
 
 const mod = @import("mod.zig");
+const Repository = mod.Repository;
 const Type = mod.Type;
 
 pub const Arg = struct {
@@ -10,21 +11,19 @@ pub const Arg = struct {
     name: [:0]const u8,
     @"type": Type,
     pub fn from(
+        repository: *const Repository,
         arg_info: ?*gir.GIArgInfo,
         maybe_parent_name: ?[:0]const u8,
         dependencies: *std.StringHashMap(void),
-        target_namespace_name: []const u8,
-        allocator: std.mem.Allocator,
     ) !Arg {
         const name = std.mem.sliceTo(gir.g_base_info_get_name(arg_info), 0);
         const type_info = gir.g_arg_info_get_type(arg_info);
         defer gir.g_base_info_unref(type_info);
         const @"type" = try Type.from(
+            repository,
             type_info,
             maybe_parent_name,
             dependencies,
-            target_namespace_name,
-            allocator,
         );
         return Arg{
             .name = name,

@@ -2,16 +2,18 @@ const std = @import("std");
 
 const gir = @import("girepository");
 
+const mod = @import("mod.zig");
+const Repository = mod.Repository;
+
 pub const Type = struct {
     const Self = @This();
     name: [:0]const u8,
     is_void: bool,
     pub fn from(
+        repository: *const Repository,
         type_info: *gir.GITypeInfo,
         maybe_parent_name: ?[:0]const u8,
         dependencies: *std.StringHashMap(void),
-        target_namespace_name: []const u8,
-        allocator: std.mem.Allocator,
     ) !Self {
         const is_pointer = gir.g_type_info_is_pointer(type_info) != 0;
         const tag = gir.g_type_info_get_tag(type_info);
@@ -71,14 +73,13 @@ pub const Type = struct {
                         const param_type_info = gir.g_type_info_get_param_type(type_info, 0);
                         defer gir.g_base_info_unref(param_type_info);
                         const param_type = try from(
+                            repository,
                             param_type_info,
                             maybe_parent_name,
                             dependencies,
-                            target_namespace_name,
-                            allocator,
                         );
                         break :out try std.mem.concatWithSentinel(
-                            allocator,
+                            repository.allocator,
                             u8,
                             &.{ "?[*]", param_type.name },
                             0,
@@ -134,13 +135,13 @@ pub const Type = struct {
                 const same_namespace = std.mem.eql(
                     u8,
                     interface_namespace_name,
-                    target_namespace_name,
+                    repository.target_namespace_name,
                 );
                 if (same_namespace) {
                     _ = try dependencies.getOrPut(interface_name);
                     switch (is_pointer) {
                         true => break :out try std.mem.concatWithSentinel(
-                            allocator,
+                            repository.allocator,
                             u8,
                             &.{ "?*", interface_name },
                             0,
@@ -150,13 +151,13 @@ pub const Type = struct {
                 } else {
                     switch (is_pointer) {
                         true => break :out try std.mem.concatWithSentinel(
-                            allocator,
+                            repository.allocator,
                             u8,
                             &.{ "?*c.G", interface_name },
                             0,
                         ),
                         false => break :out try std.mem.concatWithSentinel(
-                            allocator,
+                            repository.allocator,
                             u8,
                             &.{ "c.G", interface_name },
                             0,

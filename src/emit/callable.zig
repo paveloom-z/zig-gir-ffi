@@ -8,35 +8,34 @@ const utils = mod.utils;
 const Arg = mod.Arg;
 const Dependencies = mod.Dependencies;
 const GirFile = mod.GirFile;
+const Repository = mod.Repository;
 const Type = mod.Type;
 
 pub const Callable = struct {
     const Self = @This();
-    target_namespace_name: []const u8,
-    gir_file: *const GirFile,
+    repository: *const Repository,
     info: *gir.GICallableInfo,
     name: [:0]const u8,
     maybe_parent_name: ?[:0]const u8,
     symbol: [:0]const u8,
     is_method: bool,
-    allocator: std.mem.Allocator,
     maybe_docstring: ?[:0]const u8 = undefined,
     args: []const Arg = undefined,
     return_type: Type = undefined,
     fn parseDocstring(self: *Self) !void {
         const expressions = &.{
-            try std.mem.concatWithSentinel(self.allocator, u8, &.{
+            try std.mem.concatWithSentinel(self.repository.allocator, u8, &.{
                 "//core:function[@c:identifier=\"",
                 self.symbol,
                 "\"]/core:doc",
             }, 0),
-            try std.mem.concatWithSentinel(self.allocator, u8, &.{
+            try std.mem.concatWithSentinel(self.repository.allocator, u8, &.{
                 "//core:method[@c:identifier=\"",
                 self.symbol,
                 "\"]/core:doc",
             }, 0),
         };
-        self.maybe_docstring = try self.gir_file.getDocstring(
+        self.maybe_docstring = try self.repository.gir_file.getDocstring(
             self.symbol,
             expressions,
             true,
@@ -50,7 +49,7 @@ pub const Callable = struct {
     }
     fn parseArgs(self: *Self, dependencies: *Dependencies) !void {
         const n = gir.g_callable_info_get_n_args(self.info);
-        const args = try self.allocator.alloc(
+        const args = try self.repository.allocator.alloc(
             Arg,
             @intCast(usize, n),
         );
@@ -62,11 +61,10 @@ pub const Callable = struct {
             );
             defer gir.g_base_info_unref(argument);
             args[i] = try Arg.from(
+                self.repository,
                 argument,
                 self.name,
                 dependencies,
-                self.target_namespace_name,
-                self.allocator,
             );
         }
         self.args = args;
@@ -75,35 +73,30 @@ pub const Callable = struct {
         const return_type_info = gir.g_callable_info_get_return_type(self.info);
         defer gir.g_base_info_unref(return_type_info);
         self.return_type = try Type.from(
+            self.repository,
             return_type_info,
             self.maybe_parent_name,
             dependencies,
-            self.target_namespace_name,
-            self.allocator,
         );
     }
     pub fn from(
-        target_namespace_name: []const u8,
-        gir_file: *const GirFile,
+        repository: *const Repository,
         callable_info: *gir.GICallableInfo,
         maybe_parent_name: ?[:0]const u8,
         dependencies: *Dependencies,
-        allocator: std.mem.Allocator,
     ) !Self {
         const name_snake_case = std.mem.sliceTo(gir.g_base_info_get_name(callable_info), 0);
-        const name_camel_case = try utils.toCamelCase(name_snake_case, allocator);
+        const name_camel_case = try utils.toCamelCase(name_snake_case, repository.allocator);
         const is_method = gir.g_callable_info_is_method(callable_info) != 0;
         const symbol = std.mem.sliceTo(gir.g_function_info_get_symbol(callable_info), 0);
 
         var self = Self{
-            .target_namespace_name = target_namespace_name,
-            .gir_file = gir_file,
+            .repository = repository,
             .info = callable_info,
             .name = name_camel_case,
             .maybe_parent_name = maybe_parent_name,
             .symbol = symbol,
             .is_method = is_method,
-            .allocator = allocator,
         };
 
         try self.parseDocstring();

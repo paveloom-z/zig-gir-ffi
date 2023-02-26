@@ -5,6 +5,7 @@ const xml = @import("xml");
 
 const mod = @import("mod.zig");
 const PAD = mod.PAD;
+const Repository = mod.Repository;
 
 /// An interface to a `.gir` file
 pub const GirFile = struct {
@@ -84,20 +85,16 @@ pub const GirFile = struct {
             }
         }
     }
-    pub fn load(
-        target_namespace_name: []const u8,
-        target_namespace_version: []const u8,
-        allocator: std.mem.Allocator,
-    ) !Self {
-        var gir_file = Self{
-            .target_namespace_name = target_namespace_name,
-            .target_namespace_version = target_namespace_version,
-            .allocator = allocator,
+    pub fn from(repository: *const Repository) !Self {
+        var self = Self{
+            .target_namespace_name = repository.target_namespace_name,
+            .target_namespace_version = repository.target_namespace_version,
+            .allocator = repository.allocator,
         };
-        try gir_file.find();
-        try gir_file.parse();
-        try gir_file.prepareContext();
-        return gir_file;
+        try self.find();
+        try self.parse();
+        try self.prepareContext();
+        return self;
     }
     /// Evaluate each XPath expression, return the string
     /// contents of the first one that matched
@@ -148,7 +145,7 @@ pub const GirFile = struct {
         }
         return null;
     }
-    pub fn free(self: *Self) void {
+    pub fn free(self: *const Self) void {
         xml.xmlFreeDoc(self.doc);
         xml.xmlXPathFreeContext(self.context);
     }
