@@ -115,12 +115,12 @@ pub const Callable = struct {
         for (self.args) |arg| {
             const string = try arg.toString(self.repository.allocator);
             try args_signature.append(string);
-            try args_call.append(if (arg.type.is_interface)
+            try args_call.append(if (arg.type.tag == .interface_t)
                 try std.mem.concat(self.repository.allocator, u8, &.{ arg.name, ".toC()" })
             else
                 arg.name);
         }
-        const return_string = if (self.return_type.is_void)
+        const return_string = if (self.return_type.tag == .void_t)
             ""
         else
             "return ";

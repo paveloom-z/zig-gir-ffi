@@ -6,6 +6,7 @@ const xml = @import("xml");
 const emit = @import("emit/mod.zig");
 const Arg = emit.Arg;
 const Callable = emit.Callable;
+const ConstantsFile = emit.ConstantsFile;
 const Field = emit.Field;
 const GirFile = emit.GirFile;
 const ObjectsSubdir = emit.ObjectsSubdir;
@@ -75,6 +76,7 @@ pub const Repository = struct {
             \\pub usingnamespace @import("c.zig");
             \\pub usingnamespace @import("cast.zig");
             \\
+            \\pub usingnamespace @import("constants.zig");
             \\pub usingnamespace @import("objects/mod.zig");
             \\
         ,
@@ -132,7 +134,9 @@ pub const Repository = struct {
     }
     pub fn emit(self: *const Self) !void {
         var objects_subdir = try ObjectsSubdir.from(self);
+        var constants_file = try ConstantsFile.from(self);
         defer objects_subdir.close();
+        defer constants_file.close();
 
         const n = gir.g_irepository_get_n_infos(
             self.repository,
@@ -191,10 +195,12 @@ pub const Repository = struct {
                     };
                 },
                 gir.GI_INFO_TYPE_CONSTANT => {
-                    std.log.info(
-                        "Constant `{s}`",
-                        .{info_name},
-                    );
+                    constants_file.emitConstant(info, info_name) catch {
+                        std.log.warn(
+                            "Couldn't emit constant `{s}`.",
+                            .{info_name},
+                        );
+                    };
                 },
                 gir.GI_INFO_TYPE_UNION => {
                     std.log.info(
@@ -222,5 +228,6 @@ pub const Repository = struct {
         try self.createCastFile();
 
         try objects_subdir.emitModFile();
+        try constants_file.write();
     }
 };

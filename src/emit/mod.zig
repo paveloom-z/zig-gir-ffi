@@ -4,6 +4,7 @@ pub const Repository = @import("../repository.zig").Repository;
 
 pub const Arg = @import("arg.zig").Arg;
 pub const Callable = @import("callable.zig").Callable;
+pub const ConstantsFile = @import("constant.zig").ConstantsFile;
 pub const Field = @import("field.zig").Field;
 pub const GirFile = @import("gir.zig").GirFile;
 pub const ObjectsSubdir = @import("object.zig").ObjectsSubdir;
